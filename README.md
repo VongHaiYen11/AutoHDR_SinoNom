@@ -31,6 +31,7 @@ The original data of the dataset is sourced from public channels such as the Int
 - The modular design enables flexible adjustments, allowing AutoHDR to collaborate effectively with historians.
 
 ## 📅 News
+- **2026.07.15**: 🎉 We propose [UniHIR](https://aclanthology.org/2026.acl-long.1254/), a Unified MLLM for end-to-end Historical Inscription Restoration.
 - **2025.07.21**: 📢 Released the FPHDR dataset!
 - **2025.07.17**: 🚀 The pretrained [model](#-model-zoo) has been released!
 - **2025.07.13**: 🔥🎉 The 💻 [demo](http://121.41.49.212:8432/) is now live! Welcome to try it out!
