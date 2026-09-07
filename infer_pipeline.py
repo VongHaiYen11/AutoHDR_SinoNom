@@ -88,6 +88,11 @@ def main(data, opt):
     
     save_path = './results'
 
+    img_name = os.path.splitext(os.path.basename(data))[0]
+
+    image_result_dir = os.path.join(save_path, img_name)
+    os.makedirs(image_result_dir, exist_ok=True)
+
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
@@ -108,7 +113,8 @@ def main(data, opt):
 
     img = Image.open(data).convert('RGB')
     img_invert = invert_image(img)
-    img_invert_path = 'tmp_img/api_tmp.jpg'
+    img_name = os.path.splitext(os.path.basename(data))[0]
+    img_invert_path = f'tmp_img/{img_name}_api_tmp.jpg'
     img_invert.save(img_invert_path)
     img_invert_gray = Image.open(img_invert_path).convert('L').convert('RGB')
 
@@ -184,6 +190,65 @@ def main(data, opt):
                 to_remove.add(idx)
     
     print('arrange...')
+
+    ocr_vis = img.copy()
+    ocr_draw = ImageDraw.Draw(ocr_vis)
+
+    # =========================
+    # Vẽ các box OCR
+    # =========================
+    for box in ocr_det_bbox:
+        if idx in to_remove:
+            continue 
+        x1, y1, x2, y2 = box
+
+        # Mặc định: chữ bình thường -> xanh lá
+        box_color = 'green'
+
+        if str(box) in OCR_result:
+            text = OCR_result[str(box)][0][0]
+            ocr_draw.rectangle(
+                [x1, y1, x2, y2],
+                outline=box_color,
+                width=2
+            )
+            ocr_draw.text(
+                (x1, max(0, y1 - 20)),
+                text,
+                fill=box_color
+            )
+
+
+    # =========================
+    # Vẽ các box bị hư
+    # =========================
+    for box in vague_det_bbox:
+        x1, y1, x2, y2 = box
+
+        # Chữ bị hư -> đỏ
+        box_color = 'red'
+
+        if str(box) in vague_OCR_result:
+            text = vague_OCR_result[str(box)][0][0]
+        else:
+            text = '?'
+
+        ocr_draw.rectangle(
+            [x1, y1, x2, y2],
+            outline=box_color,
+            width=3
+        )
+
+        ocr_draw.text(
+            (x1, max(0, y1 - 20)),
+            text,
+            fill=box_color
+        )
+
+
+    ocr_vis.save(
+        os.path.join(image_result_dir, 'ocr.jpg')
+    )
 
     # 创建一个新的结果列表来拼接 这个用来做阅读顺序的，只是一个list
     final_results = []
@@ -402,6 +467,8 @@ def main(data, opt):
     img_w, img_h = img_invert.size
     patches = []
 
+    content_full = Image.new('L', img_invert.size, 255)
+
     # 创建用于可视化的图像副本
     vis_img = img_invert.copy()
     draw = ImageDraw.Draw(vis_img)
@@ -574,7 +641,10 @@ def main(data, opt):
             # 将单字图片resize成box的大小
             single_char_img = single_char_img.resize((rel_x_max - rel_x_min, rel_y_max - rel_y_min), Image.Resampling.LANCZOS)
             # 将单字图片粘贴到content图片中
-            content_image.paste(single_char_img, (rel_x_min, rel_y_min))
+            content_full.paste(
+                single_char_img,
+                (xmin + rel_x_min, ymin + rel_y_min)
+            )
 
 
         for bbox_name in patch[1]['intersect_bboxes']:
@@ -704,14 +774,16 @@ def main(data, opt):
         image = image.resize((patch_size, patch_size), Image.Resampling.LANCZOS)
         img_invert.paste(image, patch[1]['position'])
 
+    content_full.convert('RGB').save(
+        os.path.join(image_result_dir, 'content.jpg')
+    )
     restore_img = restore_image(img_invert)
     combined = concatenate_images_vertical(restore_img, img)
     print(data)
 
 
     if restore_img is not None:
-        restore_img.save(os.path.join(f'{save_path}/img', 'tmp.jpg'))
-        combined.save(os.path.join(f'{save_path}/combined', 'tmp.jpg'))
+        restore_img.save(os.path.join(image_result_dir, 'result.jpg'))
 
     del pipeline
     del unet
@@ -777,7 +849,7 @@ if __name__ == '__main__':
         set_seed(opt.seed)
     
     save_path = './results'
-    img_path = 'example.jpg'
+    input_dir = './input_images'
 
 
     if not os.path.exists(save_path):
@@ -788,10 +860,26 @@ if __name__ == '__main__':
         os.makedirs(img_dir)
 
     combined_dir = os.path.join(save_path, 'combined')
+
     if not os.path.exists(combined_dir):
         os.makedirs(combined_dir)
 
-    restore_img, combined = main(data=img_path, opt=opt)
-    if restore_img is not None:
-        restore_img.save(os.path.join(f'{save_path}/img', img_path))
-        combined.save(os.path.join(f'{save_path}/combined', img_path))
+    image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+
+    image_files = [
+        os.path.join(input_dir, f)
+        for f in os.listdir(input_dir)
+        if f.lower().endswith(image_extensions)
+    ]
+
+    print(f'Found {len(image_files)} images')
+
+    for img_path in tqdm(image_files, desc='Processing images'):
+        print(f'\n========== {img_path} ==========')
+
+        try:
+            main(data=img_path, opt=opt)
+        except Exception as e:
+            print(f'ERROR: {img_path}')
+            print(e)
+            continue                
